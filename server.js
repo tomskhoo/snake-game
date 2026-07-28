@@ -48,6 +48,7 @@ function spawnFood(room) {
 function resetRoom() {
   room = {
     players: [null, null],
+    names: [null, null],
     snakes: [freshSnake(5, 10, { x: 0, y: -1 }), freshSnake(14, 10, { x: 0, y: 1 })],
     food: null,
     interval: null,
@@ -69,7 +70,7 @@ function bothConnected() {
 function startGameIfReady() {
   if (bothConnected() && !room.started) {
     room.started = true;
-    broadcast({ type: 'start' });
+    broadcast({ type: 'start', names: room.names });
     room.interval = setInterval(tick, TICK_MS);
   }
 }
@@ -111,7 +112,7 @@ function tick() {
 
   broadcast({
     type: 'state',
-    snakes: snakes.map(s => ({ body: s.body, alive: s.alive, score: s.score })),
+    snakes: snakes.map((s, i) => ({ body: s.body, alive: s.alive, score: s.score, name: room.names[i] })),
     food: room.food,
     grid: GRID,
   });
@@ -128,7 +129,10 @@ function tick() {
   }
 }
 
-wss.on('connection', ws => {
+wss.on('connection', (ws, req) => {
+  const url = new URL(req.url, 'http://x');
+  const name = (url.searchParams.get('name') || '').trim().slice(0, 20) || 'Player';
+
   if (!room.players[0]) {
     room.players[0] = ws;
     ws.playerIndex = 0;
@@ -140,9 +144,10 @@ wss.on('connection', ws => {
     ws.close();
     return;
   }
+  room.names[ws.playerIndex] = name;
 
   ws.send(JSON.stringify({ type: 'joined', playerIndex: ws.playerIndex, grid: GRID }));
-  broadcast({ type: 'waiting', connected: room.players.filter(Boolean).length });
+  broadcast({ type: 'waiting', connected: room.players.filter(Boolean).length, names: room.names });
   startGameIfReady();
 
   ws.on('message', raw => {
@@ -160,7 +165,7 @@ wss.on('connection', ws => {
   ws.on('close', () => {
     if (room.players[ws.playerIndex] === ws) room.players[ws.playerIndex] = null;
     if (room.interval) clearInterval(room.interval);
-    broadcast({ type: 'waiting', connected: room.players.filter(Boolean).length });
+    broadcast({ type: 'waiting', connected: room.players.filter(Boolean).length, names: room.names });
     resetRoom();
   });
 });

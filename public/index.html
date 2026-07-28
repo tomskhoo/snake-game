@@ -108,13 +108,20 @@ function startOnePlayer() {
 // ---------- 2 Player (network) ----------
 function startTwoPlayer() {
   currentMode = '2p';
+  const myName = (window.prompt('Enter your name:', '') || 'Player').trim().slice(0, 20) || 'Player';
   showGame();
   statusEl.textContent = 'Connecting...';
   const wsProtocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  const ws = new WebSocket(`${wsProtocol}://${location.host}`);
+  const ws = new WebSocket(`${wsProtocol}://${location.host}/?name=${encodeURIComponent(myName)}`);
   let myIndex = null;
   let grid = 20;
+  let names = [null, null];
   let onKey;
+
+  function waitingText() {
+    const known = names.filter(Boolean);
+    return known.length ? `${known.join(' vs ')} - waiting for opponent...` : 'Waiting for opponent...';
+  }
 
   ws.onopen = () => { statusEl.textContent = 'Waiting for opponent...'; };
 
@@ -122,13 +129,13 @@ function startTwoPlayer() {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'joined') { myIndex = msg.playerIndex; grid = msg.grid; }
     else if (msg.type === 'full') { statusEl.textContent = 'Room is full. Try again later.'; ws.close(); }
-    else if (msg.type === 'waiting') { statusEl.textContent = `Waiting for opponent... (${msg.connected}/2)`; }
-    else if (msg.type === 'start') { statusEl.textContent = `You are Player ${myIndex + 1}`; }
+    else if (msg.type === 'waiting') { names = msg.names; statusEl.textContent = waitingText(); }
+    else if (msg.type === 'start') { names = msg.names; statusEl.textContent = `You are ${names[myIndex]}`; }
     else if (msg.type === 'state') {
       drawBoard(ctx, msg.grid);
       drawFood(ctx, msg.food);
       msg.snakes.forEach((s, i) => drawSnake(ctx, s, i));
-      scoresEl.textContent = msg.snakes.map((s, i) => `Player ${i + 1}: ${s.score}`).join('   ');
+      scoresEl.textContent = msg.snakes.map(s => `${s.name}: ${s.score}`).join('   ');
     } else if (msg.type === 'gameover') {
       if (msg.winner === null) statusEl.textContent = 'Draw!';
       else statusEl.textContent = msg.winner === myIndex ? 'You win!' : 'You lose!';
